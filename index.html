@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+<title>Sightline Vision — Gaze Vector Mapper</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#05080a;
+    --panel:rgba(15,23,26,0.55);
+    --panel-solid:#0c1316;
+    --border:rgba(255,255,255,0.09);
+    --green:#00ff87;
+    --green-dim:rgba(0,255,135,0.15);
+    --cyan:#00e0ff;
+    --cyan-dim:rgba(0,224,255,0.15);
+    --amber:#ffb020;
+    --text-hi:#eaf6f2;
+    --text-dim:#7c93a0;
+  }
+  *{ -webkit-tap-highlight-color: transparent; }
+  html,body{ background:var(--void); color:var(--text-hi); font-family:'Inter',sans-serif; overscroll-behavior:none; }
+  .font-display{ font-family:'Oswald',sans-serif; letter-spacing:0.02em; }
+  .font-mono{ font-family:'JetBrains Mono',monospace; }
+
+  .pitch-grid{
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+
+  .glass{
+    background: var(--panel);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--border);
+  }
+
+  .glow-green{ box-shadow: 0 0 0 1px var(--green-dim), 0 0 32px -8px rgba(0,255,135,0.35); }
+  .glow-cyan{ box-shadow: 0 0 0 1px var(--cyan-dim), 0 0 32px -8px rgba(0,224,255,0.35); }
+
+  .eyebrow{ font-family:'JetBrains Mono',monospace; letter-spacing:0.22em; text-transform:uppercase; font-size:0.68rem; color:var(--text-dim); }
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:0.5rem;
+    font-family:'Oswald',sans-serif; letter-spacing:0.04em; text-transform:uppercase;
+    font-weight:600; font-size:0.85rem;
+    padding: 0.85rem 1.25rem; min-height:48px;
+    border-radius:0.6rem; border:1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    color:var(--text-hi);
+    transition: all 0.15s ease;
+    touch-action: manipulation;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn:active{ transform: scale(0.97); }
+  .btn:hover{ background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
+  .btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  .btn-primary{ background: linear-gradient(135deg, var(--green), #00c26a); color:#032015; border:none; }
+  .btn-primary:hover{ filter:brightness(1.08); }
+
+  .dropzone{
+    border: 2px dashed rgba(0,255,135,0.35);
+    border-radius: 1rem;
+    background: radial-gradient(120% 140% at 50% 0%, rgba(0,255,135,0.06), transparent 60%);
+    transition: all 0.2s ease;
+  }
+  .dropzone.drag{ border-color: var(--cyan); background: radial-gradient(120% 140% at 50% 0%, rgba(0,224,255,0.1), transparent 60%); }
+
+  #canvasWrap{ touch-action: none; }
+  #stage{ touch-action: none; }
+
+  .step-dot{ width:10px; height:10px; border-radius:999px; flex-shrink:0; }
+  .pulse{ animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:0.45; transform:scale(0.75);} }
+
+  table.data-table{ border-collapse: separate; border-spacing:0; }
+  table.data-table th{ position:sticky; top:0; background:var(--panel-solid); z-index:1; }
+  table.data-table td, table.data-table th{ padding:0.5rem 0.75rem; white-space:nowrap; }
+  table.data-table tbody tr:nth-child(odd){ background: rgba(255,255,255,0.02); }
+  .scroll-thin::-webkit-scrollbar{ width:8px; height:8px; }
+  .scroll-thin::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.15); border-radius:999px; }
+  .scroll-thin::-webkit-scrollbar-track{ background: transparent; }
+
+  .tag-green{ color:var(--green); border-color: rgba(0,255,135,0.3); background: rgba(0,255,135,0.08); }
+  .tag-cyan{ color:var(--cyan); border-color: rgba(0,224,255,0.3); background: rgba(0,224,255,0.08); }
+</style>
+</head>
+<body class="min-h-screen pitch-grid">
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+
+  <!-- Header -->
+  <header class="mb-6 sm:mb-8">
+    <div class="eyebrow mb-2">TACTICAL VISION SYSTEM // COORD GRID 0–1000</div>
+    <h1 class="font-display text-3xl sm:text-5xl font-semibold text-white leading-tight">
+      Sightline <span style="color:var(--green)">Vision</span>
+    </h1>
+    <p class="text-sm sm:text-base text-[color:var(--text-dim)] mt-2 max-w-2xl">
+      Upload a still frame, place two players' eye origins and gaze directions, and the engine plots
+      20 numbered prediction targets — 10 per line — with full start/end coordinate verification.
+    </p>
+  </header>
+
+  <!-- Live status strip (broadcast lower-third) -->
+  <div id="statusStrip" class="glass rounded-xl mb-5 sm:mb-6 px-4 sm:px-5 py-3 flex items-center gap-3 border-l-4" style="border-left-color:var(--amber)">
+    <span id="stepDot" class="step-dot pulse" style="background:var(--amber)"></span>
+    <span id="stepText" class="font-display text-sm sm:text-base tracking-wide uppercase">Load an image to begin</span>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-5 sm:gap-6">
+
+    <!-- LEFT: Upload + Canvas -->
+    <div class="lg:col-span-3 flex flex-col gap-5">
+
+      <!-- Upload zone -->
+      <div id="dropzone" class="dropzone p-5 sm:p-7 text-center cursor-pointer select-none">
+        <input id="fileInput" type="file" accept="image/*" class="hidden" />
+        <div class="flex flex-col items-center gap-2">
+          <div class="w-12 h-12 rounded-full flex items-center justify-center" style="background:var(--green-dim)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00ff87" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div class="font-display text-lg sm:text-xl font-medium text-white" id="dzTitle">Tap to upload a sports image</div>
+          <div class="text-xs sm:text-sm text-[color:var(--text-dim)]">Opens your gallery or file browser · JPG / PNG / HEIC · works on any device</div>
+        </div>
+      </div>
+
+      <!-- Canvas panel -->
+      <div class="glass rounded-xl p-3 sm:p-4">
+        <div id="canvasWrap" class="relative w-full rounded-lg overflow-hidden bg-black/40 flex items-center justify-center" style="min-height:220px;">
+          <canvas id="stage" class="w-full h-auto block"></canvas>
+          <div id="emptyState" class="absolute inset-0 flex items-center justify-center text-[color:var(--text-dim)] text-sm px-6 text-center font-mono">
+            No image loaded yet — the canvas will appear here.
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button id="undoBtn" class="btn" disabled>Undo Tap</button>
+          <button id="resetPointsBtn" class="btn" disabled>Reset Points</button>
+          <button id="newImageBtn" class="btn" disabled>New Image</button>
+          <button id="downloadBtn" class="btn btn-primary ml-auto" disabled>Download Overlay</button>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="flex flex-wrap gap-3 text-xs font-mono">
+        <span class="px-2.5 py-1 rounded-full border tag-green">● Player 1 gaze · targets 1–10</span>
+        <span class="px-2.5 py-1 rounded-full border tag-cyan">● Player 2 gaze · targets 11–20</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Dashboard -->
+    <div class="lg:col-span-2 flex flex-col gap-5">
+
+      <!-- Verification cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="glass glow-green rounded-xl p-4">
+          <div class="eyebrow mb-1" style="color:var(--green)">Player 1 · Vector A</div>
+          <div class="font-mono text-sm space-y-1 mt-2">
+            <div class="flex justify-between"><span class="text-[color:var(--text-dim)]">Start (eye)</span><span id="p1Start">—</span></div>
+            <div class="flex justify-between"><span class="text-[color:var(--text-dim)]">End (boundary)</span><span id="p1End">—</span></div>
+          </div>
+        </div>
+        <div class="glass glow-cyan rounded-xl p-4">
+          <div class="eyebrow mb-1" style="color:var(--cyan)">Player 2 · Vector B</div>
+          <div class="font-mono text-sm space-y-1 mt-2">
+            <div class="flex justify-between"><span class="text-[color:var(--text-dim)]">Start (eye)</span><span id="p2Start">—</span></div>
+            <div class="flex justify-between"><span class="text-[color:var(--text-dim)]">End (boundary)</span><span id="p2End">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data table -->
+      <div class="glass rounded-xl p-3 sm:p-4 flex-1 min-h-[320px] flex flex-col">
+        <div class="eyebrow mb-2 px-1">Target Coordinate Dashboard</div>
+        <div class="overflow-auto scroll-thin rounded-lg border" style="border-color:var(--border); max-height:520px;">
+          <table class="data-table w-full text-sm font-mono">
+            <thead>
+              <tr class="text-left text-[color:var(--text-dim)] text-xs uppercase tracking-wide">
+                <th>#</th><th>Player</th><th>X</th><th>Y</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <tr><td colspan="4" class="text-center text-[color:var(--text-dim)] py-6">Complete both vectors to populate targets</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="errorBox" class="hidden rounded-xl px-4 py-3 text-sm font-mono border" style="border-color:rgba(255,80,80,0.4); background:rgba(255,80,80,0.08); color:#ffb4b4;"></div>
+    </div>
+
+  </div>
+
+  <footer class="mt-10 mb-4 text-center text-xs text-[color:var(--text-dim)] font-mono">
+    Coordinates normalized to a 0–1000 × 0–1000 grid · computed server-side with NumPy
+  </footer>
+</div>
+
+<script>
+(function(){
+  const API_BASE = ""; // same-origin; change if hosting frontend separately, e.g. "https://your-api.onrender.com"
+  const GRID = 1000;
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const dzTitle = document.getElementById('dzTitle');
+  const canvasWrap = document.getElementById('canvasWrap');
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const emptyState = document.getElementById('emptyState');
+
+  const stepDot = document.getElementById('stepDot');
+  const stepText = document.getElementById('stepText');
+  const statusStrip = document.getElementById('statusStrip');
+
+  const undoBtn = document.getElementById('undoBtn');
+  const resetPointsBtn = document.getElementById('resetPointsBtn');
+  const newImageBtn = document.getElementById('newImageBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  const p1StartEl = document.getElementById('p1Start');
+  const p1EndEl = document.getElementById('p1End');
+  const p2StartEl = document.getElementById('p2Start');
+  const p2EndEl = document.getElementById('p2End');
+  const tableBody = document.getElementById('tableBody');
+  const errorBox = document.getElementById('errorBox');
+
+  const COLORS = { green: '#00ff87', cyan: '#00e0ff', amber: '#ffb020' };
+
+  let img = null;
+  let taps = []; // up to 4 points, normalized {x,y} 0-1000
+  let result = null; // backend response
+
+  // step 0: no image | 1..4: which tap we're waiting for | 5: done
+  function currentStep(){ return img ? Math.min(taps.length + 1, 5) : 0; }
+
+  const STEP_LABELS = {
+    0: { label: 'Load an image to begin', color: COLORS.amber },
+    1: { label: 'Tap Player 1 — eye origin', color: COLORS.green },
+    2: { label: 'Tap Player 1 — gaze direction', color: COLORS.green },
+    3: { label: 'Tap Player 2 — eye origin', color: COLORS.cyan },
+    4: { label: 'Tap Player 2 — gaze direction', color: COLORS.cyan },
+    5: { label: 'Vectors computed — scroll dashboard for full detail', color: COLORS.green },
+  };
+
+  function updateStatus(){
+    const step = currentStep();
+    const info = STEP_LABELS[step];
+    stepText.textContent = info.label;
+    stepDot.style.background = info.color;
+    statusStrip.style.borderLeftColor = info.color;
+    stepDot.classList.toggle('pulse', step !== 0 && step !== 5);
+
+    undoBtn.disabled = taps.length === 0;
+    resetPointsBtn.disabled = taps.length === 0;
+    newImageBtn.disabled = !img;
+    downloadBtn.disabled = step !== 5;
+  }
+
+  // ---------- Upload handling ----------
+  dropzone.addEventListener('click', () => fileInput.click());
+  ['dragover','dragenter'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+  dropzone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) loadImageFile(file);
+  });
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    if (file) loadImageFile(file);
+  });
+
+  function loadImageFile(file){
+    if (!file.type.startsWith('image/')) { showError('Please choose an image file.'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const image = new Image();
+      image.onload = () => {
+        img = image;
+        taps = [];
+        result = null;
+        clearError();
+        dzTitle.textContent = file.name.length > 40 ? file.name.slice(0,37)+'…' : file.name;
+        emptyState.classList.add('hidden');
+        sizeCanvas();
+        draw();
+        resetTables();
+        updateStatus();
+      };
+      image.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function sizeCanvas(){
+    if (!img) return;
+    const wrapWidth = canvasWrap.clientWidth;
+    const aspect = img.height / img.width;
+    const cssWidth = wrapWidth;
+    const cssHeight = wrapWidth * aspect;
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', () => { if (img) { sizeCanvas(); draw(); } });
+
+  // ---------- Coordinate conversion ----------
+  function eventToNormalized(e){
+    const rect = canvas.getBoundingClientRect();
+    const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+    const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+    let x = ((clientX - rect.left) / rect.width) * GRID;
+    let y = ((clientY - rect.top) / rect.height) * GRID;
+    x = Math.max(0, Math.min(GRID, x));
+    y = Math.max(0, Math.min(GRID, y));
+    return { x, y };
+  }
+  function normToPixel(pt){
+    const cssWidth = parseFloat(canvas.style.width);
+    const cssHeight = parseFloat(canvas.style.height);
+    return { x: (pt.x / GRID) * cssWidth, y: (pt.y / GRID) * cssHeight };
+  }
+
+  canvas.addEventListener('click', handleTap);
+  canvas.addEventListener('touchend', (e) => { e.preventDefault(); handleTap(e); }, { passive: false });
+
+  function handleTap(e){
+    if (!img || taps.length >= 4) return;
+    const pt = eventToNormalized(e);
+    taps.push(pt);
+    draw();
+    updateStatus();
+    if (taps.length === 4) computeVectors();
+  }
+
+  undoBtn.addEventListener('click', () => {
+    if (taps.length === 0) return;
+    taps.pop();
+    result = null;
+    resetTables();
+    draw();
+    updateStatus();
+  });
+  resetPointsBtn.addEventListener('click', () => {
+    taps = []; result = null; resetTables(); draw(); updateStatus(); clearError();
+  });
+  newImageBtn.addEventListener('click', () => {
+    img = null; taps = []; result = null;
+    dzTitle.textContent = 'Tap to upload a sports image';
+    emptyState.classList.remove('hidden');
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    resetTables(); updateStatus(); clearError();
+    fileInput.value = '';
+  });
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'sightline-vision-overlay.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  function showError(msg){ errorBox.textContent = msg; errorBox.classList.remove('hidden'); }
+  function clearError(){ errorBox.classList.add('hidden'); errorBox.textContent=''; }
+
+  // ---------- Backend call ----------
+  async function computeVectors(){
+    const [o1, a1, o2, a2] = taps;
+    try{
+      stepText.textContent = 'Computing vectors on server…';
+      const res = await fetch(API_BASE + '/api/compute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player1: { origin: [o1.x, o1.y], aim: [a1.x, a1.y] },
+          player2: { origin: [o2.x, o2.y], aim: [a2.x, a2.y] },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Server error computing vectors.');
+      result = data;
+      populateTables(data);
+      draw();
+      updateStatus();
+    } catch (err){
+      showError(err.message || String(err));
+      taps.pop(); // let the user retry the last tap
+      updateStatus();
+    }
+  }
+
+  // ---------- Drawing ----------
+  function draw(){
+    if (!img) return;
+    const cssWidth = parseFloat(canvas.style.width);
+    const cssHeight = parseFloat(canvas.style.height);
+    ctx.clearRect(0,0,cssWidth, cssHeight);
+    ctx.drawImage(img, 0, 0, cssWidth, cssHeight);
+
+    if (result){
+      drawVector(result.player1, COLORS.green);
+      drawVector(result.player2, COLORS.cyan);
+    } else {
+      // draw raw taps as they're placed, before backend confirms
+      taps.forEach((pt, idx) => {
+        const isP1 = idx < 2;
+        drawDot(normToPixel(pt), isP1 ? COLORS.green : COLORS.cyan, null, 6);
+      });
+      // preview line between origin/aim while mid-selection
+      if (taps.length === 2 || taps.length === 4){
+        const start = taps.length === 2 ? taps[0] : taps[2];
+        const end = taps.length === 2 ? taps[1] : taps[3];
+        drawLine(normToPixel(start), normToPixel(end), taps.length === 2 ? COLORS.green : COLORS.cyan);
+      }
+    }
+  }
+
+  function drawLine(p1, p2, color){
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDot(p, color, label, radius){
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    if (label !== null && label !== undefined){
+      ctx.save();
+      ctx.font = '600 11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#04140d';
+      ctx.fillText(String(label), p.x, p.y);
+      ctx.restore();
+    }
+  }
+
+  function drawVector(vec, color){
+    const startPx = normToPixel(vec.start);
+    const endPx = normToPixel(vec.end);
+    drawLine(startPx, endPx, color);
+
+    // origin marker (diamond-ish, larger, marked "EYE")
+    ctx.save();
+    ctx.translate(startPx.x, startPx.y);
+    ctx.rotate(Math.PI/4);
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 18;
+    ctx.fillRect(-6, -6, 12, 12);
+    ctx.restore();
+
+    // end boundary marker (small ring)
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(endPx.x, endPx.y, 7, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+
+    vec.targets.forEach(t => {
+      drawDot(normToPixel(t), color, t.id, 9);
+    });
+  }
+
+  // ---------- Dashboard ----------
+  function fmt(pt){ return `${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}`; }
+
+  function resetTables(){
+    p1StartEl.textContent = '—'; p1EndEl.textContent = '—';
+    p2StartEl.textContent = '—'; p2EndEl.textContent = '—';
+    tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-[color:var(--text-dim)] py-6">Complete both vectors to populate targets</td></tr>';
+  }
+
+  function populateTables(data){
+    p1StartEl.textContent = fmt(data.player1.start);
+    p1EndEl.textContent = fmt(data.player1.end);
+    p2StartEl.textContent = fmt(data.player2.start);
+    p2EndEl.textContent = fmt(data.player2.end);
+
+    const rows = [];
+    rows.push(rowHtml('S1', 'Player 1', data.player1.start, 'tag-green'));
+    data.player1.targets.forEach(t => rows.push(rowHtml(t.id, 'Player 1', t, 'tag-green')));
+    rows.push(rowHtml('E1', 'Player 1', data.player1.end, 'tag-green'));
+
+    rows.push(rowHtml('S2', 'Player 2', data.player2.start, 'tag-cyan'));
+    data.player2.targets.forEach(t => rows.push(rowHtml(t.id, 'Player 2', t, 'tag-cyan')));
+    rows.push(rowHtml('E2', 'Player 2', data.player2.end, 'tag-cyan'));
+
+    tableBody.innerHTML = rows.join('');
+  }
+
+  function rowHtml(id, player, pt, tagClass){
+    return `<tr>
+      <td><span class="px-2 py-0.5 rounded-full border text-xs ${tagClass}">${id}</span></td>
+      <td class="text-[color:var(--text-dim)]">${player}</td>
+      <td>${pt.x.toFixed(1)}</td>
+      <td>${pt.y.toFixed(1)}</td>
+    </tr>`;
+  }
+
+  updateStatus();
+})();
+</script>
+</body>
+</html>
