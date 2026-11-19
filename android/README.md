@@ -6,6 +6,15 @@ of the original person.
 
 It uses Google's Gemini image models ("Nano Banana") through the Gemini API.
 
+## Free vs paid
+
+- **Free: open in Gemini app**: no API key needed. The app writes the detailed prompt, copies it
+  to your clipboard and sends your photos plus the reference into Google's Gemini app, which
+  generates the image for free (daily limits apply). Install Gemini from the Play Store first.
+- **Generate in app**: needs a Gemini API key **with billing enabled**. Google's free API tier
+  has a limit of 0 for image models (you'll see `429 ... limit: 0` without billing).
+  Costs a few cents per image.
+
 ## How to use
 
 1. Get a Gemini API key at https://aistudio.google.com/apikey. Image generation may require

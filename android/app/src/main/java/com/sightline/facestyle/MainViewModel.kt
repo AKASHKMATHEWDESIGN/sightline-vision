@@ -1,7 +1,10 @@
 package com.sightline.facestyle
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -26,6 +29,7 @@ data class UiState(
     val result: Bitmap? = null,
     val error: String? = null,
     val message: String? = null,
+    val launchIntent: Intent? = null,
     val apiKey: String = "",
     val model: String = MainViewModel.DEFAULT_MODEL,
 ) {
@@ -70,6 +74,45 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setConsent(v: Boolean) = _state.update { it.copy(consent = v) }
     fun dismissError() = _state.update { it.copy(error = null) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
+    fun intentLaunched() = _state.update { it.copy(launchIntent = null) }
+
+    /** Free route: hand the photos + prompt to the Gemini app, which generates images at no cost (daily limits apply). */
+    fun openInGeminiApp() {
+        val s = _state.value
+        val ref = s.reference ?: return
+        if (s.faces.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val prompt = PromptBuilder.build(s.faces.size, s.keepMyHair, s.extraPrompt, forChatApp = true)
+                val intent = withContext(Dispatchers.IO) {
+                    ImageUtils.geminiAppIntent(ctx, listOf(ref.uri) + s.faces.map { it.uri }, prompt)
+                }
+                val clipboard = ctx.getSystemService(ClipboardManager::class.java)
+                clipboard.setPrimaryClip(ClipData.newPlainText("FaceStyle prompt", prompt))
+                _state.update {
+                    it.copy(
+                        launchIntent = intent,
+                        message = "Prompt copied. If Gemini doesn't fill it in, long-press the text box and paste.",
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(error = e.message ?: e.toString()) }
+            }
+        }
+    }
+
+    private fun friendlyError(e: Exception): String {
+        val msg = e.message ?: e.toString()
+        return when {
+            "429" in msg && "limit: 0" in msg ->
+                "Google doesn't include image generation in the free tier of the API key (limit: 0).\n\n" +
+                    "Free option: tap \"Free: open in Gemini app\". The Gemini app generates these images for free (daily limit).\n\n" +
+                    "Or enable billing for your API key at aistudio.google.com (a few cents per image)."
+            "429" in msg ->
+                "Rate limit reached. Wait a minute and try again, or use \"Free: open in Gemini app\".\n\nDetails: ${msg.take(300)}"
+            else -> msg
+        }
+    }
     fun clearResult() = _state.update { it.copy(result = null) }
 
     fun saveSettings(apiKey: String, model: String) {
@@ -101,7 +144,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     ?: error("The returned image could not be decoded.")
                 _state.update { it.copy(loading = false, result = bmp) }
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message ?: e.toString()) }
+                _state.update { it.copy(loading = false, error = friendlyError(e)) }
             }
         }
     }

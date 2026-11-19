@@ -3,7 +3,7 @@ package com.sightline.facestyle
 /** Builds the instruction sent alongside the images. */
 object PromptBuilder {
 
-    fun build(faceCount: Int, keepMyHair: Boolean, extra: String): String {
+    fun build(faceCount: Int, keepMyHair: Boolean, extra: String, forChatApp: Boolean = false): String {
         val personImages = if (faceCount == 1) "IMAGE 2" else "IMAGES 2–${faceCount + 1}"
         val hair = if (keepMyHair) {
             "Use the person's own hairstyle, hair colour and hairline from $personImages, " +
@@ -12,6 +12,10 @@ object PromptBuilder {
             "Keep the hairstyle, hair styling and accessories exactly as they are in the reference."
         }
         return buildString {
+            if (forChatApp) {
+                appendLine("I've attached ${faceCount + 1} images in order. IMAGE 1 is the reference photo; the other image(s) are photos of me. Please generate an image.")
+                appendLine()
+            }
             appendLine("Task: recreate IMAGE 1 as a new photograph in which the person from $personImages takes the place of the person in IMAGE 1.")
             appendLine()
             appendLine("Copy everything from IMAGE 1 as exactly as possible:")

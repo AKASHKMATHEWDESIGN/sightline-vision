@@ -84,4 +84,39 @@ object ImageUtils {
         }
         return Intent.createChooser(send, "Share image")
     }
+
+    const val GEMINI_APP_PACKAGE = "com.google.android.apps.bard"
+
+    /**
+     * Copies the images into the app cache (so another app may read them) and builds an intent
+     * that sends them, plus the prompt, to the Gemini app. Falls back to a chooser if the
+     * Gemini app isn't installed.
+     */
+    fun geminiAppIntent(context: Context, imageUris: List<Uri>, prompt: String): Intent {
+        val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+        val shared = ArrayList<Uri>()
+        imageUris.forEachIndexed { i, src ->
+            val bmp = loadBitmap(context, src, 2048)
+            val file = File(dir, "facestyle_input_${i + 1}.jpg")
+            file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            shared += FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }
+        val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "image/jpeg"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, shared)
+            putExtra(Intent.EXTRA_TEXT, prompt)
+            clipData = android.content.ClipData.newRawUri("", shared.first()).also { clip ->
+                shared.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it)) }
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val installed = runCatching {
+            context.packageManager.getPackageInfo(GEMINI_APP_PACKAGE, 0); true
+        }.getOrDefault(false)
+        return if (installed) {
+            Intent(send).setPackage(GEMINI_APP_PACKAGE)
+        } else {
+            Intent.createChooser(send, "Open in Gemini (or another AI app)")
+        }
+    }
 }

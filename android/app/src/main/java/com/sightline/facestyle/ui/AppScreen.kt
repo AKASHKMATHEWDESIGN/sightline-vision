@@ -85,7 +85,14 @@ fun AppScreen(vm: MainViewModel) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
-    LaunchedEffect(state.apiKey) { if (state.apiKey.isBlank()) showSettings = true }
+    val context = LocalContext.current
+    LaunchedEffect(state.launchIntent) {
+        state.launchIntent?.let { intent ->
+            runCatching { context.startActivity(intent) }
+                .onFailure { context.startActivity(android.content.Intent.createChooser(intent, "Open with")) }
+            vm.intentLaunched()
+        }
+    }
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); vm.dismissMessage() }
     }
@@ -225,8 +232,22 @@ private fun EditorView(state: UiState, vm: MainViewModel) {
         ) {
             Icon(Icons.Default.AutoAwesome, null)
             Spacer(Modifier.width(8.dp))
-            Text("Generate", style = MaterialTheme.typography.titleMedium)
+            Text("Generate in app", style = MaterialTheme.typography.titleMedium)
         }
+        OutlinedButton(
+            onClick = vm::openInGeminiApp,
+            enabled = state.faces.isNotEmpty() && state.reference != null && state.consent,
+            modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(16.dp),
+        ) {
+            Icon(Icons.Default.Share, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Free: open in Gemini app", style = MaterialTheme.typography.titleMedium)
+        }
+        Text(
+            "\"Generate in app\" needs a Gemini API key with billing enabled. " +
+                "The free option sends your photos and a ready-made prompt to the Gemini app, which makes the image at no cost (daily limits apply).",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(16.dp))
     }
 }
