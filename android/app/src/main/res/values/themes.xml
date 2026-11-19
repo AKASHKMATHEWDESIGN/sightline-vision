@@ -1,0 +1,11 @@
+<resources>
+    <!-- Dark platform theme: also makes the WebView report prefers-color-scheme: dark -->
+    <style name="Theme.Lumora" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lumora_background</item>
+        <item name="android:colorBackground">@color/lumora_background</item>
+        <item name="android:colorAccent">@color/lumora_crimson</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
